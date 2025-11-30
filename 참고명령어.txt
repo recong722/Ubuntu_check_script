@@ -1,0 +1,11 @@
+
+#개수파악
+wc -l
+
+#주석 제외
+grep -vE '^[[:space:]]*#'
+grep -iE '^[[:space:]]*PermitRootLogin' #주석제외하고 PermitRootLogin만 검색
+
+
+#(( )) 안에서는 c언어의 연산처럼 사용할 수 있다.
+((vul++))
