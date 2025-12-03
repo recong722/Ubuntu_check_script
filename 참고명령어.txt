@@ -9,3 +9,6 @@ grep -iE '^[[:space:]]*PermitRootLogin' #주석제외하고 PermitRootLogin만 �
 
 #(( )) 안에서는 c언어의 연산처럼 사용할 수 있다.
 ((vul++))
+
+#while로 한줄씩 읽을때에는 IFS=':'와 같이 기준을 통해 분리하여 awk를 쓰지않고 더 빠르게 분리할 수 있다.
+while IFS=':' read -r user pw uid gid rest
