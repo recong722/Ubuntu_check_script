@@ -223,3 +223,41 @@ U_13(){
         fi
 	done
 }
+
+U_14(){
+    envfiles=(".profile" ".cshrc" ".login" ".kshrc" ".bash_profile" ".bashrc" ".bash_login")
+    mapfile -t rows < <(
+    awk -F: '$6!="" && $7 !~ /(\/false$|\/nologin$)/ {print $1 ":" $6}' /etc/passwd
+    )
+
+    users=()
+    homes=()
+
+    for row in "${rows[@]}"; do
+    users+=( "${row%%:*}" )
+    homes+=( "${row#*:}" )
+    done
+    for ((i=0; i<${#users[@]}; i++))
+    do
+        user=${users[$i]}
+        home=${homes[$i]}
+        if [ -d "$home" ]; then
+            for ((j=0; j<${#envfiles[@]}; j++))
+            do
+                owner=$(stat -c %U ${home}/${envfiles[$j]} 2>/dev/null) || continue
+                if [ "$owner" == "$user" ] || [ "$owner" == "root" ]; then
+                    perm=$(( $(stat -c "%a" ${home}/${envfiles[$j]}) % 1000 ))
+                    perm_group=$((perm / 10 % 10))
+                    perm_other=$((perm % 10))   
+                    if [ "$perm_group" -eq 2 ] || [ "$perm_other" -eq 2 ] || [ "$perm_group" -eq 3 ] || [ "$perm_other" -eq 3 ] || [ "$perm_group" -ge 6 ] ||[ "$perm_other" -ge 6 ]; then
+                        echo "U-14 취약: ${home}/${envfiles[$j]}에 group,other에 쓰기 권한이 설정되어 있음" >> $result 
+                        ((Vulc++))
+                    fi
+                else
+                    echo "U-14 취약  ${home}/${envfiles[$j]}의 소유자가 root나 해당 계정이 아님" >> $result 
+                    ((Vulc++))
+                fi
+            done
+        fi
+    done
+}
