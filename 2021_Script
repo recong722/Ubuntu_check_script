@@ -107,7 +107,7 @@ U_04(){
 }
 
 U_05(){
-    if [ `echo $PATH | grep -E '\.:|::' | wc -l` -gt 0 ]; then
+    if [ `echo $PATH | grep -E '\.:|::|:\.|\.' | wc -l` -gt 0 ]; then
         echo "U-05 취약: 환경변수 앞에 "." 이나 "::" 이 포함되어 있음" >> $result
         ((Vulc++))
     fi
