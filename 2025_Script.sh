@@ -358,6 +358,28 @@ U_22(){
     fi
 }
 
+U_23(){
+    executables=("/sbin/dump" "/sbin/restore" "/sbin/unix_chkpwd" "/usr/bin/at" "/usr/bin/lpq" "/usr/bin/lpq-lpd" "/usr/bin/lpr" "/usr/bin/lpr-lpd" "/usr/bin/lprm" "/usr/bin/lprm-lpd" "/usr/bin/newgrp" "/usr/sbin/lpc" "/usr/sbin/lpc-lpd" "/usr/sbin/traceroute")
+    found=0
+    for exe in "${executables[@]}"; do
+        [ -e "$exe" ] || continue   # 파일이 없으면 건너뜀(우분투/패키지별로 흔함)
+
+        found=1
+        perm=$(stat -c '%A' -- "$exe" 2>/dev/null) || continue
+        u=${perm:3:1}  # owner execute 자리
+        g=${perm:6:1}  # group execute 자리
+
+        if [[ "$u" =~ [sS] || "$g" =~ [sS] ]]; then
+            echo "U-23 취약: $exe 파일에 SUID/SGID 설정($perm)" >> "$result"
+            ((Vulc++))
+        fi
+    done
+
+    if [ "$found" -eq 0 ]; then
+        echo "U-23 검토: 점검 대상 주요 실행파일이 시스템에 존재하지 않음(패키지 미설치/경로 상이 가능)" >> "$result"
+        ((Rev++))
+    fi
+}
 
 
 U_24(){
