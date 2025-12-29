@@ -1,14 +1,15 @@
 result="result.txt"
 #취약점 발견시 카운트 상승
-Vulc=0
+Total_vulc=0
 Rev=0
+
 #U-01
 U_01(){
     if [ -f /etc/ssh/sshd_config ]; then
         check=`grep -iE '^[[:space:]]*PermitRootLogin' /etc/ssh/sshd_config | awk -F'[ =]+' '{print $2}'`
         if [ "$check" != "no" ]; then
             echo "U_01 취약: sshd PermitRootLogin 허용 설정 발견" >> $result
-            ((Vulc++))
+            ((Total_vulc++))
         fi
     fi
 
@@ -16,7 +17,7 @@ U_01(){
         size=$(wc -c /etc/securetty | awk '{print $1}')
         if [ $size -ne 0 ]; then
             echo "U_01 취약: /etc/securetty에 내용 존재" >> $result
-            ((Vulc++))
+            ((Total_vulc++))
         fi
     else
         echo "U_01 검토 : /etc/securetty가 존재하지 않아 로그인 차단 미적용" >> $result
@@ -24,6 +25,7 @@ U_01(){
 
     fi
 }
+
 #U_02
 U_02(){
     if [ -f /etc/security/pwquality.conf ]; then
@@ -38,7 +40,7 @@ U_02(){
             # 값이 없으면 취약
             if [ -z "$check" ]; then
                 echo "U_02 취약: $param 미설정" >> $result
-                ((Vulc++))
+                ((Total_vulc++))
                 continue
             fi
 
@@ -46,21 +48,21 @@ U_02(){
             if [ "$param" = "minlen"  ]; then
                 if [ "$check" -lt 8 ]; then
                     echo "U_02 취약: 최소 패스워드 길이 부족" >> $result
-                    ((Vulc++))
+                    ((Total_vulc++))
                 fi
 
             # difok 비어 있는 경우 취약
             elif [ "$param" = "difok"  ]; then
                 if [ "$check" -lt 1 ]; then
                     echo "U_02 취약: 동일 패스워드 사용 불가 수준 미달 (difok)" >> $result
-                    ((Vulc++))
+                    ((Total_vulc++))
                 fi
 
             # credit 계열
             else
                 if [ "$check" -gt -1 ]; then
                     echo "U_02 취약: $param 값 이상 발견" >> $result
-                    ((Vulc++))
+                    ((Total_vulc++))
                 fi
             fi
         done
@@ -76,7 +78,7 @@ U_03(){
         for row in "${denycounts[@]}"; do
             if [ "$row" -le 10 ]; then
                 echo "U-03 취약: 계정 잠금 임계값이 설정되어 있지 않거나 10회 이하의 값으로 설정되어 있습니다." >> $result
-                ((Vulc++))
+                ((Total_vulc++))
                 break
             fi
         done
@@ -93,7 +95,7 @@ U_04(){
         pw=$(echo "$line" | awk -F ':' '{print $2}')
         if [[ "$pw" != "x" ]]; then
             echo "U-04 취약: passwd파일에 $user (pw='$pw')" >> $result
-            ((Vulc++))
+            ((Total_vulc++))
         fi
         
     done < /etc/passwd
@@ -103,7 +105,7 @@ U_05(){
     InvalidUser=$(awk -F : '$3 == 0 && $1 != "root" {print $1}' /etc/passwd )
     if [ -z "$InvalidUser" ]; then
         echo "U-05 취약 : root를 제외하고 uid가 0인 계정 존재 /etc/passwd" >> $result
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
 
@@ -128,7 +130,7 @@ U_06(){
         done
         if  [ "$count" -eq 0 ]; then
             echo "U-06 취약: /etc/pam.d/su 파일에 $x 그룹이 su 사용 그룹으로 설정됨" >> $result
-            ((Vulc++))
+            ((Total_vulc++))
         fi
     done
 
@@ -148,9 +150,10 @@ U_07(){
 U_08(){
     if grep '^root:' /etc/group | tr ',' '\n' | grep -v '^root$' | grep -q .; then
         echo "U-08 취약 root 그룹에 root 외의 사용자 존재" >> $result
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
+
 U_09(){
     mapfile -t groups < <(awk -F : '{print $1}' /etc/group)
     for group in "${groups[@]}"; do
@@ -161,10 +164,11 @@ U_09(){
         fi
     done
 }
+
 U_10(){
     mapfile -t duplications < <(awk -F : '{print $3}' /etc/passwd | sort | uniq -d)
     echo "U-10 취약: 중복되는 UID 발견 ${duplications[@]}" >> $result
-    ((Vulc++))
+    ((Total_vulc++))
 }
 
 U_11(){
@@ -173,7 +177,7 @@ U_11(){
         check=$(awk -F : '$1==$noneed {print $7}' /etc/passwd)
         if [ "$check"!="/bin/false" ] && [ "$check"!="/sbin/nologin" ]; then
             echo "U-11 취약: 로그인이 필요하지않은 계정에 /bin/false 혹은 /sbin/nologin이 부여되어 있지 않음 ($noneed)" >> $result
-            ((Vulc++))
+            ((Total_vulc++))
         fi
     done
 }
@@ -204,7 +208,7 @@ U_12() {
 
     if [ ${#checks[@]} -eq 0 ]; then
         echo "U-12 취약: 시스템 전역 쉘 환경설정에서 TMOUT 설정을 찾지 못함" >> "$result"
-        ((Vulc++))
+        ((Total_vulc++))
         return
     fi
 
@@ -230,11 +234,11 @@ U_13(){
     ENCRYPT_METHOD=$(grep -vE '^[[:space:]]*#' /etc/login.defs | grep 'ENCRYPT_METHOD' | awk '{print $2}')
     if [ "$ENCRYPT_METHOD" != "SHA-256" ] && [ "$ENCRYPT_METHOD" != "SHA-512" ] && [ "$ENCRYPT_METHOD" != "yescrypt" ]; then
         echo "U-13 취약: /etc/login.defs 에서 적절하지 못한 암호화 설정 발견 ($ENCRYPT_METHOD)" >> $result
-        ((Vulc++))
+        ((Total_vulc++))
     fi
     if ! grep -vE '^[[:space:]]*#' /etc/pam.d/common-password 2>/dev/null | grep 'pam_unix.so' | grep -Eq 'sha512|sha256|yescrypt'; then
         echo "U-13 취약: /etc/pam.d/common-password에 암호화 알고리즘 설정이 부적절함" >> $result
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 
 }
@@ -242,7 +246,7 @@ U_13(){
 U_14(){
     if echo "$PATH" | grep -Eq '(^|:)\.(\:|$)|::'; then
         echo "U-14 취약: PATH에 현재 디렉터리(.) 또는 빈 경로(::)가 포함되어 있음" >> "$result"
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
 
@@ -251,17 +255,20 @@ U_15(){
     if [ $count -ne 0 ]; then
         echo "U-06 취약: 소유자가 없거나 소유 그룹이 존재하지 않는 파일 발견" >> $result
         echo $(find / \( -nouser -or -nogroup \) 2>/dev/null) >> $result
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
 
 U_16(){
-    perm=$(stat -c "%a" /etc/passwd)
+    perm=$(( $(stat -c "%a" /etc/passwd) % 1000 ))
+    perm_owner=$((perm / 100))
+    perm_group=$((perm / 10 % 10))
+    perm_other=$((perm % 10))
     owner=$(stat -c "%u" /etc/passwd)
     group=$(stat -c "%g" /etc/passwd)
-    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm" -gt 644 ] ; then
+    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 4 ]  ; then
         echo "U-16 취약: /etc/passwd 파일의 소유자가 root가 아니거나, 권한이 부적절하거나, 권한이 644 초과 (perm=$perm)" >> $result 
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 
 
@@ -277,33 +284,39 @@ U_17(){
 
         if [ "$owner" != "root" ]; then
             echo "U-17 취약: $file 파일의 소유자가 root가 아님 (owner=$owner)" >> $result
-            ((Vulc++))
+            ((Total_vulc++))
 
         elif echo "$perm" | grep -qE '^.{8}w'; then
             echo "U-17 취약: $file 파일에 일반 사용자(other) 쓰기 권한이 설정됨 (perm=$perm)" >> $result
-            ((Vulc++))
+            ((Total_vulc++))
         fi
     done
 
 }
 
 U_18(){
-    perm=$(stat -c "%a" /etc/shadow)
+    perm=$(( $(stat -c "%a" /etc/shadow) % 1000 ))
+    perm_owner=$((perm / 100))
+    perm_group=$((perm / 10 % 10))
+    perm_other=$((perm % 10))
     owner=$(stat -c "%u" /etc/shadow)
     group=$(stat -c "%g" /etc/shadow)
-    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm" -gt 400 ] ; then
+    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 4 ] || [ "$perm_group" -gt 0 ] || [ "$perm_other" -gt 0 ] ; then
         echo "U-18 취약: /etc/shadow 파일의 소유자가 root가 아니거나, group,other에 권한이 설정되어 있음 (perm=$perm)" >> $result 
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
 
 U_19(){
-    perm=$(stat -c "%a" /etc/hosts)
+    perm=$(( $(stat -c "%a" /etc/hosts) % 1000 ))
+    perm_owner=$((perm / 100))
+    perm_group=$((perm / 10 % 10))
+    perm_other=$((perm % 10))
     owner=$(stat -c "%u" /etc/hosts)
     group=$(stat -c "%g" /etc/hosts)
-    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm" -gt 644 ] ; then
+    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 4 ] ; then
         echo "U-19 취약: /etc/hosts 파일의 소유자가 root가 아니거나, 권한이 644 초과 (perm=$perm)" >> $result 
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
 
@@ -318,12 +331,15 @@ U_20(){
         return
     fi
 
-    perm=$(stat -c "%a" $inetconf)
+    perm=$(( $(stat -c "%a" $inetconf) % 1000 ))
+    perm_owner=$((perm / 100))
+    perm_group=$((perm / 10 % 10))
+    perm_other=$((perm % 10))
     owner=$(stat -c "%u" $inetconf)
     group=$(stat -c "%g" $inetconf)
-    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm" -gt 600 ] ; then
+    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 0 ] || [ "$perm_other" -gt 0 ] ; then
         echo "U-20 취약: $inetconf 파일의 소유자가 root가 아니거나, group,other에 권한이 설정되어 있음 (perm=$perm)" >> $result 
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 
 }
@@ -339,22 +355,28 @@ U_21(){
         return
     fi
 
-    perm=$(stat -c "%a" "$logconf")
+    perm=$(( $(stat -c "%a" "$logconf") % 1000 ))
+    perm_owner=$((perm / 100))
+    perm_group=$((perm / 10 % 10))
+    perm_other=$((perm % 10))
     owner=$(stat -c "%u" "$logconf")
     group=$(stat -c "%g" "$logconf")
-    if [ "$owner" -ne 0 ] || [ "$group" -ne 0 ] || [ "$perm" -gt 640 ] ; then
+    if [ "$owner" -ne 0 ] || [ "$group" -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 0 ] ; then
         echo "U-21 취약: $logconf 소유자/그룹이 root가 아니거나 권한이 640 초과 (perm=$perm)" >> "$result"
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
 
 U_22(){
-    perm=$(stat -c "%a" /etc/services)
+    perm=$(( $(stat -c "%a" /etc/services) % 1000 ))
+    perm_owner=$((perm / 100))
+    perm_group=$((perm / 10 % 10))
+    perm_other=$((perm % 10))
     owner=$(stat -c "%u" /etc/services)
     group=$(stat -c "%g" /etc/services)
-    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm" -gt 644 ] ; then
+    if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 4 ] ; then
         echo "U-22 취약: /etc/services 파일의 소유자가 root가 아니거나, 권한이 644 초과 (perm=$perm)" >> $result 
-        ((Vulc++))
+        ((Total_vulc++))
     fi
 }
 
@@ -371,7 +393,7 @@ U_23(){
 
         if [[ "$u" =~ [sS] || "$g" =~ [sS] ]]; then
             echo "U-23 취약: $exe 파일에 SUID/SGID 설정($perm)" >> "$result"
-            ((Vulc++))
+            ((Total_vulc++))
         fi
     done
 
@@ -409,14 +431,172 @@ U_24(){
                     perm_other=$((perm % 10))   
                     if [ "$perm_group" -eq 2 ] || [ "$perm_other" -eq 2 ] || [ "$perm_group" -eq 3 ] || [ "$perm_other" -eq 3 ] || [ "$perm_group" -ge 6 ] ||[ "$perm_other" -ge 6 ]; then
                         echo "U-24 취약: ${home}/${envfiles[$j]}에 group,other에 쓰기 권한이 설정되어 있음" >> $result 
-                        ((Vulc++))
+                        ((Total_vulc++))
                     fi
                 else
                     echo "U-24 취약  ${home}/${envfiles[$j]}의 소유자가 root나 해당 계정이 아님" >> $result 
-                    ((Vulc++))
+                    ((Total_vulc++))
                 fi
             done
         fi
     done
 }
 
+U_25(){
+    mapfile -t WorldWritables < <(find /etc /bin /sbin /usr/bin /usr/sbin /lib /lib64 -type f -perm -2)
+    for row in "${WorldWritables[@]}"; do
+        if [[ $row =~ .conf ]]; then
+            echo "U-25 취약 $row 파일이 설정 파일로 확인되고 다른 사용자의 쓰기 권한이 설정되어 있음" >> $result
+            ((Total_vulc++))
+        
+        elif [ -x "$row" ]; then
+            echo "U-25 취약 $row 파일이 실행 가능 파일로 확인되고 다른 사용자의 쓰기 권한이 설정되어 있음" >> $result
+            ((Total_vulc++))
+        else
+            echo "U-25 검토: $row 파일에 다른 사용자의 쓰기 권한이 설정되어 있음" >> $result
+            ((Rev++))
+        fi
+
+    done
+}
+
+U_26(){
+	if [ `find /dev -type f 2>/dev/null | wc -l` -gt 0 ]; then
+		echo "※ U-16 취약 : /dev 디렉터리에 존재하는 device 파일이 존재함." >> $result
+        echo -e "파일 목록 \n`find /dev -type f -exec ls -l {} \; | awk '{print $9}' `" >> $result
+        ((Total_vulc++))
+	fi
+}
+
+U_27(){
+    mapfile -t rows < <(
+    awk -F: '{print $1 ":" $6}' /etc/passwd
+    )
+    vulc=0
+    if [ -f /etc/hosts.equiv ]; then
+        perm=$(( $(stat -c "%a" /etc/hosts.equiv) % 1000 ))
+        perm_owner=$((perm / 100))
+        perm_group=$((perm / 10 % 10))
+        perm_other=$((perm % 10))
+        owner=$(stat -c "%u" /etc/hosts.equiv)
+        group=$(stat -c "%g" /etc/hosts.equiv)
+        if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 4 ] ; then
+            echo "U-27 취약: /etc/hosts.equiv 파일의 소유자가 root가 아니거나, 권한이 644 초과 (perm=$perm)" >> $result 
+            ((vulc++))
+        fi
+    fi
+
+    users=()
+    homes=()
+    for row in "${rows[@]}"; do
+    users+=( "${row%%:*}" )
+    homes+=( "${row#*:}" )
+    done
+    for i in ${#homes[@]}; do
+        if [ -d "${homes[$i]}" ]; then
+            rhosts_plus_count=`grep -vE '^#|^\s#' ${homes[$i]}/.rhosts | grep '+' | wc -l`
+            if [ $rhosts_plus_count -gt 0 ]; then
+                echo "U-27 취약: ${homes[$i]}/.rhost 파일에 + 설정이 존재함" >> $result
+                ((vulc++))
+            fi
+
+            if
+                perm=$( $(stat -c "%a" "${homes[$i]}/.rhosts)" % 1000 ))
+                perm_owner=$((perm / 100))
+                perm_group=$((perm / 10 % 10))
+                perm_other=$((perm % 10))
+                owner=$(stat -c "%u" ${homes[$i]}/.rhosts)
+                if [ $owner -ne "${users[$i]}" ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 0 ] || [ "$perm_other" -gt 0 ] ; then
+                    echo "U-27 취약: ${homes[$i]}/.rhost  파일의 소유자가 해당 계정이 아니거나, 권한이 600 초과 (perm=$perm)" >> $result 
+                    ((vulc++))
+                fi
+            fi
+        fi
+    done
+
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_28(){
+    echo "U-28 이 취약점에 대해서는 TCP Wrapper을 통해 적용한 접근제한 정책만을 진단하였음" >> $result
+    vulc=0
+    TCP_Wrapper_service=("systat" "in.fingerd" "vsftpd" "in.telnetd" "in.rlogind" "in.rshd" "in.talkd" "in.rexecd" "in.tftpd" "sshd") #TCP Wrapper로 제어하는 서비스에 따라 배열을 추가,제거할 것
+    if [ -f /etc/hosts.deny ]; then
+        if grep -vE '^[[:space:]]*#' /etc/host.deny | grep -iE  'all[[:space:]]*:[[:space:]]*all'; then
+            if [ -f /etc/hosts.allow ]; then
+                for service in "${TCP_Wrapper_service[@]}"; do
+                    if grep -vE '^[[:space:]]*#' /etc/host.deny | grep -iE  '${service}[[:space:]]*:[[:space:]]*all'; then
+                        echo "U-28 취약: /etc/host.allow의 ${service} 서비스에 대해 접근제한이 해제되어있음" >> $result
+                        ((vulc++))                        
+                    elif ! grep -vE '^[[:space:]]*#' /etc/host.deny | grep -iE  '${service}[[:space:]]*:'; then
+                        echo "U-28 취약: /etc/host.allow에 ${service}에 대한 접근제한 설정이 존재하지 않음" >> $result
+                        ((vulc++))
+                    fi
+                done
+            else
+                echo "U-28 검토: /etc/hosts.allow가 존재하지 않음" >> $result
+                ((Rev++))
+            fi
+                
+        else
+            echo "U-28 취약: /etc/host.deny에 적절한 접근제한 설정이 존재하지 않음(ALL:ALL)" >> $result
+            ((Total_vulc++))
+        fi
+    
+    else 
+        echo "U-28 검토: /etc/hosts.deny가 존재하지 않음" >> $result
+        ((Rev++))
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+    
+}
+    
+U_29(){
+    if ! [ -f /etc/host.lpd ]; then
+        return
+    else
+        perm=$(( $(stat -c "%a" /etc/host.lpd) % 1000 ))
+        perm_owner=$((perm / 100))
+        perm_group=$((perm / 10 % 10))
+        perm_other=$((perm % 10))
+        owner=$(stat -c "%u" /etc/host.lpd)
+        group=$(stat -c "%g" /etc/host.lpd)
+        if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 0 ] || [ "$perm_other" -gt 0 ] ; then
+            echo "U-18 취약: /etc/host.lpd 파일이 존재하며 소유자가 root가 아니거나, group,other에 권한이 설정되어 있음 (perm=$perm)" >> $result 
+            ((Total_vulc++))
+        fi
+    fi
+}
+
+U_30(){
+    if [ -f /etc/profile ]; then
+        umask=$(grep -vE '^[[:space:]]*#' /etc/profile | grep 'umask' | awk '{print $2}')
+        if [ ${umask:2:1} -lt 2 ]; then
+            echo "※ U-30 취약: 그룹 사용자(group)에 대한 umask 값이 2 이상으로 설정되지 않음" >> $result
+            return 0
+        elif [ ${umask:3:1} -lt 2 ]; then
+            echo "※ U-30 취약: 다른 사용자(other)에 대한 umask 값이 2 이상으로 설정되지 않음" >> $result
+            ((Total_vulc++))
+            return 0
+        fi
+    fi
+    
+    if [ -f /etc/login.defs ]; then
+        umask=$(grep -E '^[[:space:]]*UMASK([[:space:]]+|=)' /etc/login.defs | awk -F '[=[:space:]]+' '{print $2}'| tr -d '[:space:]'| head -n 1)
+        if [ ${umask:2:1} -lt 2 ]; then
+            echo "※ U-30 취약: 그룹 사용자(group)에 대한 umask 값이 2 이상으로 설정되지 않음" >> $result
+            return 0
+        elif [ ${umask:3:1} -lt 2 ]; then
+            echo "※ U-30 취약: 다른 사용자(other)에 대한 umask 값이 2 이상으로 설정되지 않음" >> $result
+            ((Total_vulc++))
+            return 0
+        fi
+    fi    
+
+}
