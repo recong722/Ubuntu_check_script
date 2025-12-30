@@ -492,7 +492,7 @@ U_27(){
     users+=( "${row%%:*}" )
     homes+=( "${row#*:}" )
     done
-    for i in ${#homes[@]}; do
+    for i in ${!homes[@]}; do
         if [ -d "${homes[$i]}" ]; then
             rhosts_plus_count=`grep -vE '^#|^\s#' ${homes[$i]}/.rhosts | grep '+' | wc -l`
             if [ $rhosts_plus_count -gt 0 ]; then
@@ -599,4 +599,79 @@ U_30(){
         fi
     fi    
 
+}
+
+U_31(){
+    mapfile -t rows < <(awk -F: '{print $1 ":" $6}' /etc/passwd)
+    users=()
+    homes=()
+
+    for row in "${rows[@]}"; do
+    users+=( "${row%%:*}" )
+    homes+=( "${row#*:}" )
+    done
+    for i in ${!homes[@]}; do
+        if [ -d "${homes[$i]}" ]; then
+            home_owner=$(ls -ld ${homes[$i]}| awk '{print $2}')
+            home_perm=$(ls -ld ${homes[$i]}| awk '{print $1}')
+            if [ "$home_owner" != "${users[$i]}" ]; then
+                echo "U-31 취약: ${users[$i]} 홈 디렉터리의 소유자가 해당 계정이 아님 ${homes[$i]}" >> $result
+                ((Total_vulc++))
+            fi
+            if [ "${home_perm:8:1}" == "w" ];then
+                echo "U-31 취약: ${users[$i]} 홈 디렉터리에 다른 사용자에 대한 쓰기 권한이 설정되어 있음 ${homes[$i]}" >> $result
+                ((Total_vulc++))
+            fi
+        
+        else 
+            echo "U-31 검토: ${homes[$i]} 디렉터리가 존재하지 않음" >> $result
+            ((Rev++))
+        fi
+    done
+}
+
+
+U_32(){
+    mapfile -t rows < <(awk -F: '$7 !~ /(nologin|false)$/ {print $1 ":" $6}' /etc/passwd)
+    users=()
+    homes=()
+    vulc=0
+    for row in "${rows[@]}"; do
+    users+=( "${row%%:*}" )
+    homes+=( "${row#*:}" )
+    done
+
+    for i in "${!homes[@]}"; do
+        if [ ! -d "${homes[$i]}" ]; then
+            echo "U-32 취약: ${users[$i]}의 홈 디렉터리가 존재하지 않음" >> $result
+            ((vulc++))
+        fi
+    done
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+
+}
+
+U_33(){
+    hidden="hiddenlist.txt"
+    hiddenfile=$(find / -name '.*' -type f 2>/dev/null)
+    hiddendir=$(find / -name '.*' -type d 2>/dev/null)
+
+	if [ -n "$hiddenfile" ]; then
+        echo "U-33 검토: 숨겨진 파일이 존재함 hiddenlist.txt 참고" >> $result
+        echo "file list" >>$hidden
+        echo >> "$hidden" 
+        echo "${hiddenfile}" >> $hidden
+        ((Rev++))
+    fi
+
+    if [ -n "$hiddendir" ]; then
+        echo "U-33 검토: 숨겨진 디렉터리가 존재함 hiddenlist.txt 참고" >> $result
+        echo "dir list" >>$hidden
+        echo >> "$hidden" 
+        echo "${hiddendir}" >> $hidden
+        ((Rev++))
+    fi
 }
