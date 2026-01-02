@@ -39,3 +39,14 @@ awk -F : '$7=="/bin/bash"{print $1}' /etc/passwd
 
 거짓인 경우
 ! -?
+
+
+#grep -q 
+quite모드로 출력이 보이지 않는다
+
+#여러개일수있을때 하나만 고르는 명령어
+head -n 1
+
+#명령어에서의 논리 실행
+
+command1 && command2 일때 command1이 성공하면 command2를 실행

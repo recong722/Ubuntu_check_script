@@ -675,3 +675,312 @@ U_33(){
         ((Rev++))
     fi
 }
+
+U_34(){
+    if ! dpkg -l | grep -q finger; then
+        return 0
+    fi
+
+    if [ -f /etc/inetd.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf | grep -q finger; then
+            echo "U-34 취약: finger 서비스가 설치되어있고 /etc/inetd.conf에 활성화되도록 설정되어 있음" >> $result
+            ((Total_vulc++))
+        fi
+    elif [ -d /etc/xinetd.d ]; then
+        finger=$(grep -l '^[[:space:]]*service[[:space:]]\+finger' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+
+        if [ -n "$finger" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$finger"; then
+                echo "U-34 취약: finger 서비스가 설치되어 있고 xinetd에서 활성화 상태임 ($finger)" >> $result
+                ((Total_vulc++))
+            fi
+        fi
+
+    else 
+
+    if systemctl list-unit-files 2>/dev/null | grep -q finger; then
+        echo "U-34 검토: inetd xinet가 없으나 finger 서비스 존재" >> $result
+        ((Rev++))
+    fi
+
+    fi
+}
+
+
+U_35(){
+    vulc=0
+
+    #기본 FTP
+    if grep -q 'ftp' /etc/passwd; then
+        echo "U-35 취약: ftp 계정이 존재함." >> $result
+        ((vulc++))
+        
+    fi
+    if grep -q 'anonymous' /etc/passwd; then
+        echo "U-35 취약: anonymous 계정이 계정이 존재함." >> $result
+        ((vulc++))
+    fi
+
+    #vsFTP
+    if [ -f /etc/vsftpd.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/vsftpd.conf | grep -qi '^[[:space:]]*anonymous_enable[[:space:]]*=[[:space:]]*yes'; then
+            echo "U-35 취약: vsFTP에서 anonymous_enable이 설정되어 있음." >> $result
+            ((vulc++))
+        fi  
+    elif [ -f /etc/vsftpd/vsftpd.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/vsftpd/vsftpd.conf | grep -qi '^[[:space:]]*anonymous_enable[[:space:]]*=[[:space:]]*yes'; then
+            echo "U-35 취약: vsFTP에서 anonymous_enable이 설정되어 있음." >> $result
+            ((vulc++))
+        fi  
+    fi
+
+    #proFTPD
+    if [ -f /etc/proftpd/proftpd.conf ]; then
+        if sed -n '/<Anonymous ~ftp>/,/<\/Anonymous>/p' /etc/proftpd/proftpd.conf | grep -vE '^[[:space:]]*#'; then
+            echo "U-35 취약: proFTPD에서 anonymous 설정이 존재함." >> $result
+            ((vulc++))
+        fi
+    fi
+    #NFS
+    if [ -f /etc/dfs/dfstab ]; then
+        if ! grep -vE '^[[:space:]]*#' /etc/dfs/dfstab | grep -qi '^[[:space:]]*share.*anon[[:space:]]*=[[:space:]]*-1'; then
+            echo "U-35 취약: NFS에서 anonymous가 허용되어 있음." >> $result
+            ((vulc++))
+        fi
+    fi
+    #SAMBA
+    if [ -f /etc/samba/smb.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/samba/smb.conf | grep -qi '^[[:space:]]*guest ok[[:space:]]*=[[:space:]]*yes'; then
+            echo "U-35 취약: SAMBA에서 guest ok가 설정되어 있음." >> $result
+            ((vulc++))
+        fi
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_36(){
+    vulc=0
+    if [ -f /etc/hosts.equiv ]; then
+        echo "U-36 취약: /etc/hosts.equiv 파일이 존재함" >> $result
+        ((vulc++))
+    fi
+
+    mapfile -t rows < <(awk -F: '{print $1 ":" $6}' /etc/passwd)
+    users=()
+    homes=()
+
+    for row in "${rows[@]}"; do
+    users+=( "${row%%:*}" )
+    homes+=( "${row#*:}" )
+    done
+
+    for i in ${!homes[@]}; do
+        if [ -d "${homes[$i]}" ]; then
+            if [ -f "${homes[$i]}/.rhosts" ]; then
+                echo "U-36 취약: ${users[$i]} 홈 디렉터리에 .rhosts 파일이 존재함" >> $result
+                ((vulc++))
+            fi
+        fi
+    done
+    if [ -f /etc/inetd.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*shell[[:space:]]'; then
+            echo "U-36 취약: /etc/inetd.conf 파일에서 shell 서비스가 활성화 되어있음" >> $result
+            ((vulc++))
+        fi
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*login[[:space:]]'; then
+            echo "U-36 취약: /etc/inetd.conf 파일에서 login 서비스가 활성화 되어있음" >> $result
+            ((vulc++))
+        fi
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*exec[[:space:]]'; then
+            echo "U-36 취약: /etc/inetd.conf 파일에서 exec 서비스가 활성화 되어있음" >> $result
+            ((vulc++))
+        fi
+        
+    elif [ -d /etc/xinetd.d ]; then
+        shell=$(grep -l '^[[:space:]]*service[[:space:]]\+shell' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        login=$(grep -l '^[[:space:]]*service[[:space:]]\+login' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        exec=$(grep -l '^[[:space:]]*service[[:space:]]\+exec' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+
+        if [ -n "$shell" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$shell"; then
+                echo "U-36 취약: shell 서비스가 xinetd에서 활성화 상태임 ($shell)" >> $result
+                ((vulc++))
+            fi
+        fi
+
+        if [ -n "$login" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$finger"; then
+                echo "U-34 취약: login 서비스가 xinetd에서 활성화 상태임 ($login)" >> $result
+                ((vulc++))
+            fi
+        fi
+
+        if [ -n "$exec" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$exec"; then
+                echo "U-36 취약: exec 서비스가 xinetd에서 활성화 상태임 ($exec)" >> $result
+                ((vulc++))
+            fi
+        fi
+    elif systemctl list-unit-files 2>/dev/null | grep -qE 'rsh|rlogin|rexec'; then
+        echo "U-36 검토: inetd, xinetd가 없으나 shell,login,exec 서비스 존재" >> $result
+        ((Rev++))
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+
+U_37(){
+    vulc=0
+    if [ -f /usr/bin/crontab ]; then
+        perm=$(( $(stat -c "%a" /usr/bin/crontab) % 1000 ))
+        perm_owner=$((perm / 100))
+        perm_group=$((perm / 10 % 10))
+        perm_other=$((perm % 10))
+        owner=$(stat -c "%u" /usr/bin/crontab)
+        group=$(stat -c "%g" /usr/bin/crontab)
+        if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_group" -gt 5 ] || [ "$perm_other" -gt 0 ] ; then
+            echo "U-37 취약: /usr/bin/crontab 파일의 소유자가 root가 아니거나, 권한이 부적절하게 설정되어 있음 (perm=$perm)" >> $result 
+            ((vulc++))
+        fi
+    fi
+
+    if [ -f /usr/bin/at ]; then
+        perm=$(( $(stat -c "%a" /usr/bin/at) % 1000 ))
+        perm_owner=$((perm / 100))
+        perm_group=$((perm / 10 % 10))
+        perm_other=$((perm % 10))
+        owner=$(stat -c "%u" /usr/bin/at)
+        group=$(stat -c "%g" /usr/bin/at)
+        if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_group" -gt 5 ] || [ "$perm_other" -gt 0 ] ; then
+            echo "U-37 취약: /usr/bin/at 파일의 소유자가 root가 아니거나, 권한이 750을 넘음 (perm=$perm)" >> $result 
+            ((vulc++))
+        fi
+    fi
+
+    mapfile -t crons < <(find /var/spool/cron -type f -perm /037 2>/dev/null)
+    mapfile -t ats < <(find /var/spool/at -type f -perm /037 2>/dev/null)
+    mapfile -t etccrons < <(find /etc/crontab /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly /etc/cron.allow /etc/cron.deny -type f -perm /037 2>/dev/null)
+    mapfile -t etcats < <(find /etc/at /etc/at.allow /etc/at.deny -type f -perm /037 2>/dev/null)
+    for cron in "${crons[@]}"; do
+        echo "U-37 취약: $cron 파일에 권한이 부적절하게 설정되어 있음 " >> $result
+        ((vulc++))
+    done
+    for at in "${ats[@]}"; do
+        echo "U-37 취약: $at 파일에 권한이 부적절하게 설정되어 있음" >> $result
+        ((vulc++))
+    done
+    for etccron in "${etccrons[@]}"; do
+        echo "U-37 취약: $etccron 파일에 권한이 부적절하게 설정되어 있음" >> $result
+        ((vulc++))
+    done
+
+    for etcat in "${etcats[@]}"; do
+        echo "U-37 취약: $etcat 파일에 권한이 부적절하게 설정되어 있음" >> $result
+        ((vulc++))
+    done
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_38(){
+    if [ -f /etc/inetd.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*echo[[:space:]]'; then
+            echo "U-38 취약: /etc/inetd.conf 파일에서 echo 서비스가 활성화 되어있음" >> $result
+            ((vulc++))
+        fi
+
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*discard[[:space:]]'; then
+            echo "U-38 취약: /etc/inetd.conf 파일에서 discard 서비스가 활성화 되어있음" >> $result
+            ((vulc++))
+        fi
+
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*daytime[[:space:]]'; then
+            echo "U-38 취약: /etc/inetd.conf 파일에서 daytime 서비스가 활성화 되어있음" >> $result
+            ((vulc++))
+        fi
+
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*chargen[[:space:]]'; then
+            echo "U-38 취약: /etc/inetd.conf 파일에서 chargen 서비스가 활성화 되어있음" >> $result
+            ((vulc++))
+        fi
+        
+    elif [ -d /etc/xinetd.d ]; then
+        echo=$(grep -l '^[[:space:]]*service[[:space:]]\+echo' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        discard=$(grep -l '^[[:space:]]*service[[:space:]]\+discard' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        daytime=$(grep -l '^[[:space:]]*service[[:space:]]\+daytime' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        chargen=$(grep -l '^[[:space:]]*service[[:space:]]\+chargen' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+
+        if [ -n "$echo" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$echo"; then
+                echo "U-38 취약: echo 서비스가 xinetd에서 활성화 상태임 ($echo)" >> $result
+                ((vulc++))
+            fi
+        fi
+        if [ -n "$discard" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$discard"; then
+                echo "U-38 취약: discard 서비스가 xinetd에서 활성화 상태임 ($discard)" >> $result
+                ((vulc++))
+            fi
+        fi
+        if [ -n "$daytime" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$daytime"; then
+                echo "U-38 취약: daytime 서비스가 xinetd에서 활성화 상태임 ($daytime)" >> $result
+                ((vulc++))
+            fi
+        fi
+        if [ -n "$chargen" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$chargen"; then
+                echo "U-38 취약: chargen 서비스가 xinetd에서 활성화 상태임 ($chargen)" >> $result
+                ((vulc++))
+            fi
+        fi
+    elif systemctl list-unit-files 2>/dev/null | grep -qE 'echo|discard|daytime|chargen'; then
+        echo "U-38 검토: inetd, xinetd가 없으나 echo,discard,daytime,chargen 서비스 존재" >> $result
+        ((Rev++))
+    fi
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_39(){
+    if systemctl list-units --type=service 2>/dev/null | grep -qE 'nfs'; then
+        echo "U-39 취약: NFS 서비스 관련 데몬이 활성화 되어 있음" >> $result
+        ((Total_vulc++))
+    fi
+}
+
+U_40(){
+    vulc=0
+    if [ -f /etc/exports ]; then
+        perm=$(( $(stat -c "%a" /etc/exports) % 1000 ))
+        perm_owner=$((perm / 100))
+        perm_group=$((perm / 10 % 10))
+        perm_other=$((perm % 10))
+        owner=$(stat -c "%u" /etc/exports)
+        group=$(stat -c "%g" /etc/exports)
+        if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 4 ] ; then
+            echo "U-40 취약: /etc/exports 파일의 소유자가 root가 아니거나, 권한이 644를 넘음 (perm=$perm)" >> $result 
+            ((vulc++))
+        fi
+
+        not_allowed_count=$(grep -vE '^[[:space:]]*#' /etc/exports | grep -E '\(.*insecure.*\)|\*\(.*rw.*\)|\*\(.*ro.*\)|\(.*no_root_squash.*\)' | wc -l)
+        if [ $not_allowed_count -gt 0 ]; then
+            echo "U-40 취약: /etc/exports 파일에 보안상 부적절한 설정이 존재함" >> $result 
+            ((vulc++))
+        fi
+
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
