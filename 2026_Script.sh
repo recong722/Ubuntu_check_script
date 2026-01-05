@@ -687,7 +687,7 @@ U_34(){
             ((Total_vulc++))
         fi
     elif [ -d /etc/xinetd.d ]; then
-        finger=$(grep -l '^[[:space:]]*service[[:space:]]\+finger' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        finger=$(grep -l '^[[:space:]]*service[[:space:]]*finger' /etc/xinetd.d/* 2>/dev/null | head -n 1)
 
         if [ -n "$finger" ]; then
             if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$finger"; then
@@ -800,9 +800,9 @@ U_36(){
         fi
         
     elif [ -d /etc/xinetd.d ]; then
-        shell=$(grep -l '^[[:space:]]*service[[:space:]]\+shell' /etc/xinetd.d/* 2>/dev/null | head -n 1)
-        login=$(grep -l '^[[:space:]]*service[[:space:]]\+login' /etc/xinetd.d/* 2>/dev/null | head -n 1)
-        exec=$(grep -l '^[[:space:]]*service[[:space:]]\+exec' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        shell=$(grep -l '^[[:space:]]*service[[:space:]]*shell' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        login=$(grep -l '^[[:space:]]*service[[:space:]]*login' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        exec=$(grep -l '^[[:space:]]*service[[:space:]]*exec' /etc/xinetd.d/* 2>/dev/null | head -n 1)
 
         if [ -n "$shell" ]; then
             if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$shell"; then
@@ -913,10 +913,10 @@ U_38(){
         fi
         
     elif [ -d /etc/xinetd.d ]; then
-        echo=$(grep -l '^[[:space:]]*service[[:space:]]\+echo' /etc/xinetd.d/* 2>/dev/null | head -n 1)
-        discard=$(grep -l '^[[:space:]]*service[[:space:]]\+discard' /etc/xinetd.d/* 2>/dev/null | head -n 1)
-        daytime=$(grep -l '^[[:space:]]*service[[:space:]]\+daytime' /etc/xinetd.d/* 2>/dev/null | head -n 1)
-        chargen=$(grep -l '^[[:space:]]*service[[:space:]]\+chargen' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        echo=$(grep -l '^[[:space:]]*service[[:space:]]*echo' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        discard=$(grep -l '^[[:space:]]*service[[:space:]]*discard' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        daytime=$(grep -l '^[[:space:]]*service[[:space:]]*daytime' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+        chargen=$(grep -l '^[[:space:]]*service[[:space:]]*chargen' /etc/xinetd.d/* 2>/dev/null | head -n 1)
 
         if [ -n "$echo" ]; then
             if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$echo"; then
@@ -983,4 +983,333 @@ U_40(){
     if [ $vulc -gt 0 ]; then
         ((Total_vulc++))
     fi
+}
+
+
+U_41(){
+    if systemctl list-units --type=service | grep -Eq "automount|autofs" 2>/dev/null; then
+        echo "U-41 취약: automount/autofs 서비스 관련 데몬이 활성화 되어 있음" >> $result
+        ((Total_vulc++))
+    fi
+}
+
+U_42(){
+    checks=("rpc.cmsd" "rpc.ttdbserverd" "sadmind" "rusersd" "walld" "sprayd" \
+    "rstatd" "rpc.nisd" "rexd" "rpc.pcnfsd" "rpc.statd" "rpc.ypupdated" "rpc.rquotad" "kcms_server" \
+    "cachefsd")
+    vulc=0
+    for check in "${checks[@]}"; do
+        if [ -f /etc/inetd.conf ]; then
+                if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*$check'; then
+                    echo "U-42 취약: /etc/inetd.conf 파일에서 $check 서비스가 활성화 되어있음" >> $result
+                    ((vulc++))
+                fi
+        elif [ -d /etc/xinetd.d ]; then
+            service_file=$(grep -l "^[[:space:]]*service[[:space:]]*$check" /etc/xinetd.d/* 2>/dev/null | head -n 1)
+            if [ -n "$service_file" ]; then
+                if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$service_file"; then
+                    echo "U-42 취약: $check 서비스가 xinetd에서 활성화 상태임 ($service_file)" >> $result
+                    ((vulc++))
+                fi
+            fi
+        elif systemctl list-unit-files 2>/dev/null | grep -qE "$check"; then
+            echo "U-42 검토: inetd, xinetd가 없으나 $check 서비스 존재" >> $result
+            ((Rev++))
+        fi
+    done
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_43(){
+    if systemctl list-units --type=service | grep -Eq "ypserv|ypbind|ypxfrd|rpc.yppasswdd|rpc.ypupdate" 2>/dev/null; then
+        echo "U-43 취약: NIS 서비스 관련 데몬이 활성화 되어 있음" >> $result
+        ((Total_vulc++))
+    fi
+    if systemctl list-units --type=service | grep -q nisd 2>/dev/null; then
+        echo "U-43 검토: NIS+ 데몬이 활성화 되어 있음" >> $result
+        ((Rev++))
+    fi
+}
+
+U_44(){
+    checks=("tftp" "talk" "ntalk")
+    vulc=0
+    for check in "${checks[@]}"; do
+        if [ -f /etc/inetd.conf ]; then
+                if grep -vE '^[[:space:]]*#' /etc/inetd.conf 2>/dev/null | grep -qE '^[[:space:]]*$check'; then
+                    echo "U-44 취약: /etc/inetd.conf 파일에서 $check 서비스가 활성화 되어있음" >> $result
+                    ((vulc++))
+                fi
+        elif [ -d /etc/xinetd.d ]; then
+            service_file=$(grep -l "^[[:space:]]*service[[:space:]]*$check" /etc/xinetd.d/* 2>/dev/null | head -n 1)
+            if [ -n "$service_file" ]; then
+                if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$service_file"; then
+                    echo "U-44 취약: $check 서비스가 xinetd에서 활성화 상태임 ($service_file)" >> $result
+                    ((vulc++))
+                fi
+            fi
+        elif systemctl list-unit-files 2>/dev/null | grep -qE "$check"; then
+            echo "U-44 검토: inetd, xinetd가 없으나 $check 서비스 존재" >> $result
+            ((Rev++))
+        fi
+    done
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_45(){
+    vulc=0
+    sendmail_latest_version="8.15.2"
+    postfix_latest_version="3.6.4"
+    exim_latest_version="4.96"
+    # sendmail
+    if dpkg -s sendmail >/dev/null 2>&1; then
+    if ! dpkg -s sendmail 2>/dev/null | grep -E '^Version:' | grep -Fq -- "$sendmail_version"; then
+        echo "U-45 취약: sendmail 버전이 기준($sendmail_version)과 다름" >> "$result"
+        ((vulc++))
+    fi
+    fi
+
+    # postfix
+    if dpkg -s postfix >/dev/null 2>&1; then
+    if ! dpkg -s postfix 2>/dev/null | grep -E '^Version:' | grep -Fq -- "$postfix_version"; then
+        echo "U-45 취약: postfix 버전이 기준($postfix_version)과 다름" >> "$result"
+        ((vulc++))
+    fi
+    fi
+
+    # exim4
+    if dpkg -s exim4 >/dev/null 2>&1; then
+    if ! dpkg -s exim4 2>/dev/null | grep -E '^Version:' | grep -Fq -- "$exim_version"; then
+        echo "U-45 취약: exim4 버전이 기준($exim_version)과 다름" >> "$result"
+        ((vulc++))
+    fi
+    fi
+
+
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+
+}
+
+U_46(){
+    vulc=0
+    #senmail 설정 확인
+    if ! grep -vE '^[[:space:]]*#' /etc/mail/sendmail.cf | grep 'PrivacyOptions' | grep -q 'restrictqrun';then
+        echo "U-46 취약: sendmail의 PrivacyOptions에 restrictqrun 옵션이 설정되어 있지 않음" >> $result
+        ((vulc++))
+    fi
+    #postfix 설정 확인
+    if [ -f /usr/sbin/postsuper ]; then
+        perm=$(ls -l /usr/sbin/postsuper | awk '{print $1}')
+        if [ "${perm:9:1}" != "-" ]; then
+            echo "U-46 취약: /usr/sbin/postsuper 파일에 다른 사용자에 대한 실행 권한이 설정되어 있음 (perm=$perm)" >> $result 
+            ((vulc++))
+        fi
+    fi
+    #exim 설정 확인
+    if [ -f /usr/sbin/exiqgrep ]; then
+        perm=$(ls -l /usr/sbin/exiqgrep | awk '{print $1}')
+        if [ "${perm:9:1}" != "-" ]; then
+            echo "U-46 취약: /usr/sbin/exiqgrep 파일에 다른 사용자에 대한 실행 권한이 설정되어 있음 (perm=$perm)" >> $result 
+            ((vulc++))
+        fi
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_47(){
+    vulc=0
+    #sendmail
+    version=$(sendmail -d0.1 -bv root 2>/dev/null | grep -i 'version' | sed -n 's/.*[Vv]ersion[[:space:]]\([0-9]\+\.[0-9]\+\).*/\1/p')
+    if [ $version -lt 8.9 ]; then
+        #sendmail 8.9버전 미만일 시
+        if ! grep -vE '^[[:space:]]*#' /etc/mail/sendmail.cf | grep -E '^R.*\$#error'; then
+            echo "U-47 취약: sendmail(8.9 미만)에서 SMTP 릴레이 제한 Rule이 설정되어 있지 않음" >> "$result"
+            ((vulc++))
+        fi
+    else
+        #sendmail 8.9버전 이상일 시
+        if grep -vE '^[[:space:]]*#' /etc/mail/sendmail.cf | grep -q 'promiscuous_relay'; then
+            echo "U-47 취약: sendmail(8.9 이상)에서 SMTP 릴레이 제한 promiscuous_relay" >> "$result"
+            ((vulc++))
+        fi
+    fi
+
+    if [ -f /etc/mail/access ]; then
+        if ! grep -vE '^[[:space:]]*#' /etc/mail/access | grep -Eq '(RELAY|REJECT)'; then
+            echo "U-47 취약: /etc/mail/access 파일에 릴레이 제한 설정이 존재하지 않음" >> "$result"
+            ((vulc++))
+        fi
+    else
+        echo "U-47 취약: /etc/mail/access 파일이 존재하지 않음" >> "$result"
+        ((vulc++))
+    fi
+    #postfix
+    if [ -f /etc/postfix/main.cf ]; then
+        if ! grep -vE '^[[:space:]]*#' /etc/postfix/main.cf | grep -qE 'smtpd_recipient_restrictions|mynetworks'; then
+            echo "U-47 취약: /etc/postfix/main.cf 파일에 릴레이 제한 설정이 존재하지 않음" >> "$result"
+            ((vulc++))
+        fi
+    else
+        echo "U-47 취약: /etc/postfix/main.cf 파일이 존재하지 않음" >> "$result"
+        ((vulc++))
+    fi
+    #exim
+    if [ -f /etc/exim4/exim4.conf.template ]; then
+        if ! grep -vE '^[[:space:]]*#' /etc/exim4/exim4.conf.template | grep -q 'host_list relay_from_hosts'; then
+            echo "U-47 취약: /etc/exim4/exim4.conf.template 파일에 릴레이 제한 설정이 존재하지 않음" >> "$result"
+            ((vulc++))
+        fi
+    elif [ -f /etc/exim/exim.conf ]; then
+        if ! grep -vE '^[[:space:]]*#' /etc/exim/exim.conf | grep -q 'host_list relay_from_hosts'; then
+            echo "U-47 취약: /etc/exim/exim.conf 파일에 릴레이 제한 설정이 존재하지 않음" >> "$result"
+            ((vulc++))
+        fi
+    else
+        echo "U-47 취약: exim 설정 파일이 존재하지 않음" >> "$result"
+        ((vulc++))
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+
+}
+
+U_48(){
+    vulc=0
+    #sendmail
+    if [ -f /etc/mail/sendmail.cf ]; then
+        if ! grep -vE '^[[:space:]]*#' /etc/mail/sendmail.cf | grep 'PrivacyOptions' | grep -qE 'novrfy|noexpn';then
+            echo "U-48 취약: sendmail의 PrivacyOptions에 noexpn,novrfy 옵션이 설정되어 있지 않음" >> $result
+            ((vulc++))
+            return 0
+        fi
+    fi
+
+    #postfix
+    if [ -f /etc/postfix/main.cf ]; then
+        if ! grep -vE '^[[:space:]]*#' /etc/postfix/main.cf | grep -qE 'disable_vrfy_command[[:space:]]*=[[:space:]]*yes'; then
+            echo "U-48 취약: /etc/postfix/main.cf 파일에 disable_vrfy_command 옵션이 설정되어 있지 않음" >> $result
+            ((vulc++))
+            return 0
+        fi
+    fi
+
+    #exim
+    if [ -f /etc/exim/exim.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/exim/exim.conf | grep -qE 'acl_smtp_vrfy[[:space:]]*=[[:space:]]*accept'; then
+            echo "U-48 취약: /etc/exim/exim.conf 파일에 VRFY 명령어가 허용되어 있음" >> $result
+            ((vulc++))
+            return 0
+        elif grep -vE '^[[:space:]]*#' /etc/exim/exim.conf | grep -qE 'acl_smtp_expn[[:space:]]*=[[:space:]]*accept'; then
+            echo "U-48 취약: /etc/exim/exim.conf 파일에 EXPN 명령어가 허용되어 있음" >> $result
+            ((vulc++))
+            return 0
+        fi
+    elif [ -f /etc/exim4/exim4.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/exim4/exim4.conf | grep -qE 'acl_smtp_vrfy[[:space:]]*=[[:space:]]*accept'; then
+            echo "U-48 취약: /etc/exim4/exim4.conf 파일에 VRFY 명령어가 허용되어 있음" >> $result
+            ((vulc++))
+            return 0
+        elif grep -vE '^[[:space:]]*#' /etc/exim4/exim4.conf | grep -qE 'acl_smtp_expn[[:space:]]*=[[:space:]]*accept'; then
+            echo "U-48 취약: /etc/exim4/exim4.conf 파일에 EXPN 명령어가 허용되어 있음" >> $result
+            ((vulc++))
+            return 0
+        fi
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_49(){
+    if systemctl list-units --type=service | grep -q "named" 2>/dev/null; then
+        if apt-get -s upgrade | grep '^Inst' | grep -q bind; then
+            echo "U-49 취약: DNS 서비스인 BIND가 최신 버전이 아님" >> $result
+            ((Total_vulc++))
+        fi
+    fi
+}
+
+U_50(){
+    vulc=0
+    if [ -f /etc/named.boot ]; then
+        bootfile="/etc/named.boot"
+    elif [ -f /etc/bind/named.boot ]; then
+        bootfile="/etc/bind/named.boot"
+    fi
+
+    if [ -f /etc/named.conf ]; then
+        configfile="/etc/named.conf"
+    elif [ -f /etc/bind/named.conf ]; then
+        configfile="/etc/bind/named.conf"
+    fi
+
+    if [ -n "$bootfile" ];then
+        if ! grep -vE '^[[:space:]]*#' "$bootfile" | grep -q 'xfrnets'; then
+            echo "U-50 취약: $bootfile 파일에 xfrnets 설정이 존재하지 않음" >> $result
+            ((vulc++))
+        else 
+            if grep -vE '^[[:space:]]*#' "$bootfile" | grep 'xfrnets' | grep -Eq '[[:space:]]*0\.0\.0\.0|[[:space:]]|[[:space:]]*#|\/\/|xfrnets[[:space:]]*+$'; then
+                echo "U-50 취약: $bootfile 파일에 xfrnets 설정이 모든 대역을 허용하거나 공백으로 설정됨" >> $result
+                ((vulc++))
+            fi
+        fi
+    fi
+
+    if [ -n "$configfile" ];then
+        if ! grep -vE '^[[:space:]]*#' "$configfile" | grep -q 'allow-transfer'; then
+            echo "U-50 취약: $configfile 파일에 allow-transfer 설정이 존재하지 않음" >> $result
+            ((vulc++))
+        else 
+            if grep -vE '^[[:space:]]*#' "$configfile" | grep 'allow-transfer' | grep -Eq 'any|0\.0\.0\.0'; then
+                echo "U-50 취약: $configfile 파일에 allow-transfer 설정이 모든 대역을 허용하도록 설정됨" >> $result
+                ((vulc++))
+            fi
+        fi
+    fi
+}
+
+U_51(){
+    vulc=0
+
+    if [ -f /etc/named.conf ]; then
+        configfile="/etc/named.conf"
+    elif [ -f /etc/bind/named.conf ]; then
+        configfile="/etc/bind/named.conf"
+    else
+        return 0
+    fi
+
+    g=$(grep -vE '^[[:space:]]*#' $configfile | awk '/allow-update[[:space:]]*\{/{f=1}f{print}/\};/{f=0}'|sed -e 's/.*{//' -e 's/}.*//' -e 's/^[[:space:]]*//'|tr ';' '\n'| sed '/^[[:space:]]*$/d')
+    for net in $g; do
+        if [ -z "$net" ]; then
+            break
+        fi
+        if [ "$net" = "any" ] || [ "$net" = "0.0.0.0/0" ]; then
+            echo "U-51 취약: $configfile 파일에 allow-update 설정이 모든 대역을 허용하도록 설정됨" >> $result
+            ((vulc++))
+        else
+            echo "U-51 검토: $configfile 파일에 allow-update 설정이 존재함($net)" >> $result
+            ((Rev++))
+        fi
+    done
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+
 }
