@@ -1313,3 +1313,204 @@ U_51(){
     fi
 
 }
+
+U_52(){
+    vulc=0
+    if [ -f /etc/inetd.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf | grep -q telnet; then
+            echo "U-52 취약: telnet 서비스가 설치되어있고 /etc/inetd.conf에 활성화되도록 설정되어 있음" >> $result
+            ((ulc++))
+        fi
+    elif [ -d /etc/xinetd.d ]; then
+        telnet=$(grep -l '^[[:space:]]*service[[:space:]]*telnet' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+
+        if [ -n "$telnet" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$telnet"; then
+                echo "U-52 취약: t 서비스가 설치되어 있고 xinetd에서 활성화 상태임 ($telnet)" >> $result
+                ((vulc++))
+            fi
+        fi
+
+    else 
+        if systemctl list-unit-files 2>/dev/null | grep -qE '^telnet\.socket'; then
+            if systemctl is-enabled telnet.socket 2>/dev/null | grep -qv 'disabled'; then
+                echo "U-52 취약: telnet.socket이 enabled 상태임" >> "$result"
+                ((vulc++))
+            fi
+            if systemctl is-active telnet.socket 2>/dev/null | grep -q 'active'; then
+                echo "U-52 취약: telnet.socket이 active 상태임" >> "$result"
+                ((vulc++))
+            fi
+        fi
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_53(){
+    vulc=0
+
+    #vsFTP
+    if [ -f /etc/vsftpd.conf ]; then
+        banner=$(grep -vE '^[[:space:]]*#' /etc/vsftpd.conf | grep '^[[:space:]]*ftpd_banner[[:space:]]*=' | awk -F= '{print $2}' | sed 's/^[[:space:]]*//')
+        if [ -z "$banner" ]; then
+            echo "U-35 취약: vsFTP에서 ftpd_banner 설정이 존재하지 않음" >> $result
+            ((vulc++))
+        else
+            echo "U-35 검토: vsFTP에서 ftpd_banner 설정이 존재함 ($banner)" >> $result
+            ((Rev++))
+        fi
+    elif [ -f /etc/vsftpd/vsftpd.conf ]; then
+        banner=$(grep -vE '^[[:space:]]*#' /etc/vsftpd/vsftpd.conf | grep '^[[:space:]]*ftpd_banner[[:space:]]*=' | awk -F= '{print $2}' | sed 's/^[[:space:]]*//')
+        if [ -z "$banner" ]; then
+            echo "U-35 취약: vsFTP에서 ftpd_banner 설정이 존재하지 않음" >> $result
+            ((vulc++))
+        else
+            echo "U-35 검토: vsFTP에서 ftpd_banner 설정이 존재함 ($banner)" >> $result
+            ((Rev++))
+        fi
+
+    fi
+
+    #proFTPD
+    if [ -f /etc/proftpd/proftpd.conf ]; then
+        toggle=$(grep -vE '^[[:space:]]*#' /etc/proftpd/proftpd.conf | grep '^[[:space:]]*ServerIdent[[:space:]]*' | awk '{print $2}')
+        if [ "$toggle" = "" ]; then
+            echo "U-35 취약: proFTPD에서 ServerIdent 설정이 off로 설정되어 있지 않음 " >> $result
+            ((vulc++))
+        elif [ "$toggle" = "on" ]; then
+            ServerIdent_value=$(grep -vE '^[[:space:]]*#' /etc/proftpd/proftpd.conf | grep '^[[:space:]]*ServerIdent[[:space:]]*' | sed -e 's/^[[:space:]]*ServerIdent[[:space:]]*[Oo][Nn]//'| sed 's/^[[:space:]]*//')
+            if [ -n "$ServerIdent_value" ]; then
+            echo "U-35 검토: proFTPD에서 ServerIdent 설정이 존재함 ($ServerIdent_value)" >> $result
+            ((Rev++))
+            elif [ -z "$ServerIdent_value" ]; then
+            echo "U-35 취약: proFTPD에서 ServerIdent 설정이 on으로 설정되어 있으나 값이 없음" >> $result
+            ((vulc++))
+            fi
+        fi
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_54(){
+    if [ -f /etc/inetd.conf ]; then
+        if grep -vE '^[[:space:]]*#' /etc/inetd.conf | grep -q ftp; then
+            echo "U-34 취약: ftp 서비스가 설치되어있고 /etc/inetd.conf에 활성화되도록 설정되어 있음" >> $result
+            ((Total_vulc++))
+        fi
+    elif [ -d /etc/xinetd.d ]; then
+        ftp=$(grep -l '^[[:space:]]*service[[:space:]]*ftp' /etc/xinetd.d/* 2>/dev/null | head -n 1)
+
+        if [ -n "$ftp" ]; then
+            if ! grep -qi '^[[:space:]]*disable[[:space:]]*=[[:space:]]*yes' "$ftp"; then
+                echo "U-34 취약: ftp 서비스가 설치되어 있고 xinetd에서 활성화 상태임 ($finger)" >> $result
+                ((Total_vulc++))
+            fi
+        fi
+
+    else 
+
+        if systemctl list-unit-files 2>/dev/null | grep -q vsftpd; then
+            echo "U-34 검토: inetd xinet가 없으나 vsftpd 서비스 존재" >> $result
+            ((Rev++))
+        fi   
+        if systemctl list-unit-files 2>/dev/null | grep -q proftpd; then
+            echo "U-34 검토: inetd xinet가 없으나 proftpd 서비스 존재" >> $result
+            ((Rev++))
+        fi
+    fi
+}
+
+
+U_55(){
+    ftp_login_shell=$(awk -F : '$1=="ftp" {print $7}' /etc/passwd)
+    if [[ "$ftp_login_shell" =~ nologin ]] && [ "$ftp_login_shell" != "/bin/false" ]; then
+        echo "U-55 취약: ftp 계정의 로그인 쉘이 비활성화 되어있지 않음 (쉘=$ftp_login_shell)" >> $result
+        ((Total_vulc++))
+    fi
+}
+
+U_56(){
+    vulc=0
+    if [ -f /etc/ftpusers ]; then
+        perm=$(( $(stat -c "%a" /etc/ftpusers) % 1000 ))
+        perm_owner=$((perm / 100))
+        perm_group=$((perm / 10 % 10))
+        perm_other=$((perm % 10))
+        owner=$(stat -c "%u" /etc/ftpusers)
+        group=$(stat -c "%g" /etc/ftpusers)
+        if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 0 ] ; then
+            echo "U-56 검토: /etc/ftpusers 파일의 소유자가 root가 아니거나, 권한이 640를 넘음 (perm=$perm)" >> $result 
+            ((Rev++))
+        fi   
+        ftpusers="/etc/ftpusers"
+    elif [ - f /etc/ftpd/ftpusers ]; then
+        perm=$(( $(stat -c "%a" /etc/ftpd/ftpusers) % 1000 ))
+        perm_owner=$((perm / 100))
+        perm_group=$((perm / 10 % 10))
+        perm_other=$((perm % 10))
+        owner=$(stat -c "%u" /etc/ftpd/ftpusers)
+        group=$(stat -c "%g" /etc/ftpd/ftpusers)
+        if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 0 ] ; then
+            echo "U-56 검토: /etc/ftpd/ftpusers 파일의 소유자가 root가 아니거나, 권한이 640를 넘음 (perm=$perm)" >> $result 
+            ((Rev++))
+        fi   
+        ftpusers="/etc/ftpd/ftpusers"
+    else 
+        echo "U-56 검토: ftpusers 파일이 존재하지 않음" >> $result 
+        ((Rev++))
+        return 0
+    fi
+
+    ftpuser_list=$(grep -vE '^[[:space:]]*#' $ftpusers | sed '/^[[:space:]]*$/d')
+    echo "U-56 검토: ftpusers 파일에 다음 사용자들이 등록되어 있음 ">> $result
+    echo "$ftpusers" >> $result
+
+    if [ -f /etc/vsftpd.conf ]; then
+        vsftpd_conf="/etc/vsftpd.conf"
+    elif [ -f /etc/vsftpd/vsftpd.conf ]; then
+        vsftpd_conf="/etc/vsftpd/vsftpd.conf"
+
+    if [ -n $vsftpd_conf ]; then
+        userlist_enable=$(grep -vE '^[[:space:]]*#' $vsftpd_conf | grep '^[[:space:]]*userlist_enable[[:space:]]*=' | awk -F= '{print $2}' | sed 's/^[[:space:]]*//' | tr '[:upper:]' '[:lower:]')
+        if ["$userlist_enable" != "yes" ]; then
+            if [ -f /etc/vsftpd.ftpusers ]; then
+                vsftpd_ftpusers="/etc/vsftpd.ftpusers"
+            elif [ -f /etc/vsftpd/vsftpd.ftpusers ]; then
+                vsftpd_ftpusers="/etc/vsftpd/vsftpd.ftpusers"
+            fi
+
+            if [ -n "$vsftpd_ftpusers" ]; then
+                perm=$(( $(stat -c "%a" $vsftpd_ftpusers) % 1000 ))
+                perm_owner=$((perm / 100))
+                perm_group=$((perm / 10 % 10))
+                perm_other=$((perm % 10))
+                owner=$(stat -c "%u" $vsftpd_ftpusers)
+                group=$(stat -c "%g" $vsftpd_ftpusers)
+                if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 0 ] ; then
+                    echo "U-56 검토: $vsftpd_ftpusers 파일의 소유자가 root가 아니거나, 권한이 640를 넘음 (perm=$perm)" >> $result 
+                    ((Rev++))
+                fi             
+            else 
+                echo "U-56 검토: vsFTP의 ftpusers 파일이 존재하지 않음" >> $result 
+                ((Rev++))
+            fi
+            if [ -n "$vsftpusers" ]; then
+                vsftpuser_list=$(grep -vE '^[[:space:]]*#' $vsftpusers | sed '/^[[:space:]]*$/d')
+                echo "U-56 검토: vsFTP ftpusers 파일에 다음 사용자들이 등록되어 있음 ">> $result
+                echo "$vsftpuser_list" >> $result
+            fi
+        else
+            if [ -f /etc/]
+
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
