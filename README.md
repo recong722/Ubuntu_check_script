@@ -59,6 +59,5 @@
 ## 결과 출력 예시
 
 ```text
-U-25 취약: /usr/bin/example 파일이 실행 가능 파일이며 other write 권한이 설정됨
-U-36 검토: r-command 서비스 패키지는 존재하나 서비스 비활성 상태
-U-43 양호: NIS 관련 서비스 비활성 확인
+U-52 취약: telnet 서비스가 설치되어있고 /etc/inetd.conf에 활성화되도록 설정되어 있음
+U-56 검토: vsFTP의 ftpusers 파일에 다음 사용자들이 등록되어 있음
