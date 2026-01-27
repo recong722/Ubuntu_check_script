@@ -1437,6 +1437,7 @@ U_55(){
 
 U_56(){
     vulc=0
+    #ftpusers 파일 권한 및 소유자 확인
     if [ -f /etc/ftpusers ]; then
         perm=$(( $(stat -c "%a" /etc/ftpusers) % 1000 ))
         perm_owner=$((perm / 100))
@@ -1464,13 +1465,13 @@ U_56(){
     else 
         echo "U-56 검토: ftpusers 파일이 존재하지 않음" >> $result 
         ((Rev++))
-        return 0
     fi
 
     ftpuser_list=$(grep -vE '^[[:space:]]*#' $ftpusers | sed '/^[[:space:]]*$/d')
     echo "U-56 검토: ftpusers 파일에 다음 사용자들이 등록되어 있음 ">> $result
     echo "$ftpusers" >> $result
 
+    #vsftpd 설정 확인
     if [ -f /etc/vsftpd.conf ]; then
         vsftpd_conf="/etc/vsftpd.conf"
     elif [ -f /etc/vsftpd/vsftpd.conf ]; then
@@ -1502,15 +1503,110 @@ U_56(){
             fi
             if [ -n "$vsftpusers" ]; then
                 vsftpuser_list=$(grep -vE '^[[:space:]]*#' $vsftpusers | sed '/^[[:space:]]*$/d')
-                echo "U-56 검토: vsFTP ftpusers 파일에 다음 사용자들이 등록되어 있음 ">> $result
+                echo "U-56 검토: vsFTP의 ftpusers 파일에 다음 사용자들이 등록되어 있음 ">> $result
                 echo "$vsftpuser_list" >> $result
             fi
         else
-            if [ -f /etc/]
+            if [ -f /etc/vsftpd.user_list ]; then
+                vsftp_userlist="/etc/vsftpd.user_list"
+            elif [ -f /etc/vsftpd/vsftpd.user_list ]; then
+                vsftp_userlist="/etc/vsftpd/user_list"
+            fi
 
+            if [ -n "$vsftp_userlist" ]; then
+                perm=$(( $(stat -c "%a" $vsftp_userlist) % 1000 ))
+                perm_owner=$((perm / 100))
+                perm_group=$((perm / 10 % 10))
+                perm_other=$((perm % 10))
+                owner=$(stat -c "%u" $vsftp_userlist)
+                group=$(stat -c "%g" $vsftp_userlist)
+                if [ $owner -ne 0 ] || [ $group -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 0 ] ; then
+                    echo "U-56 검토: $vsftp_userlist 파일의 소유자가 root가 아니거나, 권한이 640를 넘음 (perm=$perm)" >> $result 
+                    ((Rev++))
+                fi             
+            else 
+                echo "U-56 검토: vsFTP의 user_list 파일이 존재하지 않음" >> $result 
+                ((Rev++))
+            fi
+
+            if [ -n "$vsftp_userlist" ]; then
+                vsftpuser_list=$(grep -vE '^[[:space:]]*#' $vsftp_userlist | sed '/^[[:space:]]*$/d')
+                echo "U-56 검토: vsFTP의 user_list 파일에 다음 사용자들이 등록되어 있음 ">> $result
+                echo "$vsftpuser_list" >> $result
+            fi
+        fi
+    fi
+    #ProFTPD 설정 확인
 
     if [ $vulc -gt 0 ]; then
         ((Total_vulc++))
     fi
 }
 
+U_57(){
+    #기본FTP 설정 확인
+    if [ -f /etc/ftpusers ]; then
+        ftpusers="/etc/ftpusers"
+    elif [ - f /etc/ftpd/ftpusers ]; then
+        ftpusers="/etc/ftpd/ftpusers"
+    
+    if [ -n "$ftpusers" ]; then
+        root_in_ftpusers=$(grep -vE '^[[:space:]]*#' $ftpusers | grep -w '^root$')
+        if [ -z "$root_in_ftpusers" ]; then
+            echo "U-57 취약: ftpusers 파일에 root 계정이 등록되어 있지 않음" >> $result
+            ((vulc++))
+        fi
+    fi
+    #vsFTP 설정 확인
+    if [ -f /etc/vsftpd.conf ]; then
+        vsftpd_conf="/etc/vsftpd.conf"
+    elif [ -f /etc/vsftpd/vsftpd.conf ]; then
+        vsftpd_conf="/etc/vsftpd/vsftpd.conf"
+
+    if [ -n $vsftpd_conf ]; then
+        userlist_enable=$(grep -vE '^[[:space:]]*#' $vsftpd_conf | grep '^[[:space:]]*userlist_enable[[:space:]]*=' | awk -F= '{print $2}' | sed 's/^[[:space:]]*//' | tr '[:upper:]' '[:lower:]')
+        if ["$userlist_enable" != "yes" ]; then
+            if [ -f /etc/vsftpd.ftpusers ]; then
+                vsftpd_ftpusers="/etc/vsftpd.ftpusers"
+            elif [ -f /etc/vsftpd/vsftpd.ftpusers ]; then
+                vsftpd_ftpusers="/etc/vsftpd/vsftpd.ftpusers"
+            fi
+
+
+            if [ -n "$vsftpd_ftpusers" ]; then
+                vs_root_in_ftpusers=$(grep -vE '^[[:space:]]*#' $vsftpusers | grep -w '^root$')
+                if [ -z "$vs_root_in_ftpusers" ]; then
+                    echo "U-57 취약: vsFTP의 ftpusers 파일에 root 계정이 등록되어 있지 않음 ">> $result
+                    ((vulc++))
+                fi
+                
+            fi
+        else
+            if [ -f /etc/vsftpd.user_list ]; then
+                vsftp_userlist="/etc/vsftpd.user_list"
+            elif [ -f /etc/vsftpd/vsftpd.user_list ]; then
+                vsftp_userlist="/etc/vsftpd/user_list"
+            fi
+
+            if [ -n "$vsftp_userlist" ]; then
+                vsftpuser_list=$(grep -vE '^[[:space:]]*#' $vsftp_userlist | grep -w '^root$')
+                if [ -z "$vsftpuser_list" ]; then
+                    echo "U-57 취약: vsFTP의 user_list 파일에 root 계정이 등록되어 있지 않음 ">> $result
+                    ((vulc++))
+                fi
+            fi
+        fi
+    fi
+
+    #ProFTPD 설정 확인
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+
+U_58(){
+
+    
+}
