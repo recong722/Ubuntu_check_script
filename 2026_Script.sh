@@ -1544,6 +1544,7 @@ U_56(){
 }
 
 U_57(){
+    vulc=0
     #기본FTP 설정 확인
     if [ -f /etc/ftpusers ]; then
         ftpusers="/etc/ftpusers"
@@ -1607,6 +1608,324 @@ U_57(){
 
 
 U_58(){
+    if systemctl list-units --type=service 2>/dev/null | grep -qE 'snmpd'; then
+        echo "U-58 검토: snmpd 데몬이 활성화 되어 있음" >> $result
+        ((Rev++))
+    fi
+}
 
-    
+U_59(){
+    low_version_snmp=$(grep -E 'rocommunity|rwcommunity' /etc/snmp/snmpd.conf)
+    if [ -n "$low_version_snmp" ]; then
+        echo "U-59 취약: SNMP 설정 파일에 SNMPv1/v2c 관련 설정이 존재함" >> $result
+        ((Total_vulc++))
+    fi
+}
+
+U_60(){
+    vulc=0
+    mapfile -t community_strings < <(grep -E 'rocommunity|rwcommunity' /etc/snmp/snmpd.conf)
+    for str in "${community_strings[@]}"; do
+        if [[ "$str" =~ (public|private) ]]; then
+            echo "U-60 취약: SNMP 설정 파일에 기본 커뮤니티 스트링($str)이 사용되고 있음" >> $result
+            ((vulc++))
+        fi
+    done
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+
+}
+
+U_61(){
+    vulc=0
+    mapfile -t community_strings < <(grep -E 'rocommunity|rwcommunity' /etc/snmp/snmpd.conf)
+    for str in "${community_strings[@]}"; do
+        network_id=$(echo "$str" | awk {'print $3'})
+        if [ "$network_id" = "0.0.0.0" ] || [ "$network_id" = "any" ] || [ "$network_id" = "0.0.0.0/0" ] || [ -z $network_id ] ; then
+            echo "U-61 취약: SNMP 설정 파일에 모든 대역에서 접근 가능한 커뮤니티 스트링($str)이 사용되고 있음" >> $result
+            ((vulc++))
+        fi
+    done    
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+}
+
+U_62(){
+    vulc=0
+    #motd 파일 확인
+	if [ -f /etc/motd ]; then
+		if [ `grep -vE '^ *#|^$' /etc/motd | wc -l` -eq 0 ]; then
+			echo "U-62 취약: /etc/motd 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+            ((vulc++))
+		fi
+	else
+		echo "U-62 취약: /etc/motd 파일이 없습니다." >> $result 2>&1
+        ((vulc++))
+	fi
+    #telnet 서비스 확인
+	if [ -f /etc/services ]; then
+		telnet_port_count=`grep -vE '^#|^\s#' /etc/services | awk 'tolower($1)=="telnet" {print $2}' | awk -F / 'tolower($2)=="tcp" {print $1}' | wc -l`
+		if [ $telnet_port_count -gt 0 ]; then
+			telnet_port=(`grep -vE '^#|^\s#' /etc/services | awk 'tolower($1)=="telnet" {print $2}' | awk -F / 'tolower($2)=="tcp" {print $1}'`)
+			for ((i=0; i<${#telnet_port[@]}; i++))
+			do
+				netstat_telnet_count=`netstat -nat 2>/dev/null | grep -w 'tcp' | grep -Ei 'listen|established|syn_sent|syn_received' | grep ":${telnet_port[$i]} " | wc -l`
+				if [ $netstat_telnet_count -gt 0 ]; then
+					if [ -f /etc/issue.net ]; then
+						if [ `grep -vE '^ *#|^$' /etc/issue.net | wc -l` -eq 0 ]; then
+							echo "U-62 취약: telnet 서비스를 사용하고, /etc/issue.net 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                            ((vulc++))
+						fi
+					else
+						echo "U-62 취약: telnet 서비스를 사용하고, /etc/issue.net 파일이 없습니다." >> $result 2>&1
+                        ((vulc++))
+					fi
+				fi
+			done
+		fi
+	fi
+	ps_telnet_count=`ps -ef | grep -i 'telnet' | grep -v 'grep' | wc -l`
+	if [ $ps_telnet_count -gt 0 ]; then
+		if [ -f /etc/issue.net ]; then
+			if [ `grep -vE '^ *#|^$' /etc/issue.net | wc -l` -eq 0 ]; then
+				echo "U-62 취약: telnet 서비스를 사용하고, /etc/issue.net 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                ((vulc++))
+			fi
+		else
+			echo "U-62 취약: telnet 서비스를 사용하고, /etc/issue.net 파일이 없습니다." >> $result 2>&1
+            ((vulc++))
+		fi
+	fi
+    #SSH 서비스 확인
+    if systemctl list-units --type=service 2>/dev/null | grep -qE 'sshd'; then
+        sshd_banner_count=`grep -vE '^#|^\s#' /etc/ssh/sshd_config | grep 'Banner' | awk '$2!="" {print $2}' | wc -l`
+        if [ $sshd_banner_count -eq 0 ]; then
+            echo "U-62 취약: ssh 서비스를 사용하고, /etc/ssh/sshd_config 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+            ((vulc++))
+        fi
+    fi
+
+
+
+    #ftp 서비스 확인
+	if [ -f /etc/services ]; then
+		ftp_port_count=`grep -vE '^#|^\s#' /etc/services | awk 'tolower($1)=="ftp" {print $2}' | awk -F / 'tolower($2)=="tcp" {print $1}' | wc -l`
+		if [ $ftp_port_count -gt 0 ]; then
+			ftp_port=(`grep -vE '^#|^\s#' /etc/services | awk 'tolower($1)=="ftp" {print $2}' | awk -F / 'tolower($2)=="tcp" {print $1}'`)
+			for ((i=0; i<${#ftp_port[@]}; i++))
+			do
+				netstat_ftp_count=`netstat -nat 2>/dev/null | grep -w 'tcp' | grep -Ei 'listen|established|syn_sent|syn_received' | grep ":${ftp_port[$i]} " | wc -l`
+				if [ $netstat_ftp_count -gt 0 ]; then
+					ftpdconf_file_exists_count=0
+					if [ -f /etc/vsftpd.conf ]; then
+						((ftpdconf_file_exists_count++))
+						vsftpdconf_banner_count=`grep -vE '^#|^\s#' /etc/vsftpd.conf | grep 'ftpd_banner' | awk -F = '$2!=" " {print $2}' | wc -l`
+						if [ $vsftpdconf_banner_count -eq 0 ]; then
+							echo "U-62 취약: ftp 서비스를 사용하고, /etc/vsftpd.conf 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                            ((vulc++))
+						fi
+					fi
+                    #proftpd 설정 파일 확인(재점검)
+					if [ -f /etc/proftpd/proftpd.conf ]; then
+						((ftpdconf_file_exists_count++))
+						proftpdconf_banner_count=`grep -vE '^#|^\s#' /etc/proftpd/proftpd.conf | grep 'ServerIdent' | wc -l`
+						if [ $proftpdconf_banner_count -eq 0 ]; then
+							echo "U-62 취약: ftp 서비스를 사용하고, /etc/proftpd/proftpd.conf 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                            ((vulc++))
+						fi
+					fi
+
+					if [ $ftpdconf_file_exists_count -eq 0 ]; then
+						echo "U-62 취약: ftp 서비스를 사용하고, 로그온 메시지를 설정하는 파일이 없습니다." >> $result 2>&1
+                        ((vulc++))
+					fi
+					
+				fi
+			done
+		fi
+	fi
+	ps_ftp_count=`ps -ef | grep -i 'ftp' | grep -vE 'grep|tftp|sftp' | wc -l`
+	if [ $ps_ftp_count -gt 0 ]; then
+		ftpdconf_file_exists_count=0
+		if [ -f /etc/vsftpd.conf ]; then
+			((ftpdconf_file_exists_count++))
+			vsftpdconf_banner_count=`grep -vE '^#|^\s#' /etc/vsftpd.conf | grep 'ftpd_banner' | awk -F = '$2!=" " {print $2}' | wc -l`
+			if [ $vsftpdconf_banner_count -eq 0 ]; then
+				echo "U-62 취약: ftp 서비스를 사용하고, /etc/vsftpd.conf 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                ((vulc++))
+			fi
+		fi
+		if [ -f /etc/proftpd/proftpd.conf ]; then
+			((ftpdconf_file_exists_count++))
+			proftpdconf_banner_count=`grep -vE '^#|^\s#' /etc/proftpd/proftpd.conf | grep 'ServerIdent' | wc -l`
+			if [ $proftpdconf_banner_count -eq 0 ]; then
+				echo "U-62 취약: ftp 서비스를 사용하고, /etc/proftpd/proftpd.conf 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                ((vulc++))
+			fi
+		fi
+		if [ -f /etc/pure-ftpd/conf/WelcomeMsg ]; then
+			((ftpdconf_file_exists_count++))
+			pureftpd_conf_banner_count=`grep -vE '^ *#|^$' /etc/pure-ftpd/conf/WelcomeMsg | wc -l`
+			if [ $pureftpd_conf_banner_count -eq 0 ]; then
+				echo "U-62 취약: ftp 서비스를 사용하고, /etc/pure-ftpd/conf/WelcomeMsg 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                ((vulc++))
+			fi
+		fi
+		if [ $ftpdconf_file_exists_count -eq 0 ]; then
+			echo "U-62 취약: ftp 서비스를 사용하고, 로그온 메시지를 설정하는 파일이 없습니다." >> $result 2>&1
+            ((vulc++))
+		fi
+	fi
+    #smtp 서비스 확인
+	if [ -f /etc/services ]; then
+		smtp_port_count=`grep -vE '^#|^\s#' /etc/services | awk 'tolower($1)=="smtp" {print $2}' | awk -F / 'tolower($2)=="tcp" {print $1}' | wc -l`
+		if [ $smtp_port_count -gt 0 ]; then
+			smtp_port=(`grep -vE '^#|^\s#' /etc/services | awk 'tolower($1)=="smtp" {print $2}' | awk -F / 'tolower($2)=="tcp" {print $1}'`)
+			for ((i=0; i<${#smtp_port[@]}; i++))
+			do
+				netstat_smtp_count=`netstat -nat 2>/dev/null | grep -w 'tcp' | grep -Ei 'listen|established|syn_sent|syn_received' | grep ":${smtp_port[$i]} " | wc -l`
+				if [ $netstat_smtp_count -gt 0 ]; then
+					find_sendmailcf_count=`find / -name 'sendmail.cf' -type f 2>/dev/null | wc -l`
+					if [ $find_sendmailcf_count -gt 0 ]; then
+						sendmailcf_files=(`find / -name 'sendmail.cf' -type f 2>/dev/null`)
+						for ((j=0; j<${#sendmailcf_files[@]}; j++))
+						do
+							sendmailcf_banner_count=`grep -vE '^#|^\s#' ${sendmailcf_files[$j]} | grep 'Smtp' | grep 'GreetingMessage' | awk -F = '{gsub(" ", "", $0); print $2}' | wc -l`
+							if [ $sendmailcf_banner_count -eq 0 ]; then
+								echo "U-62 취약: smtp 서비스를 사용하고, ${sendmailcf_files[$j]} 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                                ((vulc++))
+							fi
+						done
+					else
+						echo "U-62 취약: smtp 서비스를 사용하고, 로그온 메시지를 설정하는 파일이 없습니다." >> $result 2>&1
+                        ((vulc++))
+					fi
+				fi
+			done
+		fi
+	fi
+	ps_smtp_count=`ps -ef | grep -iE 'smtp|sendmail' | grep -v 'grep' | wc -l`
+	if [ $ps_smtp_count -gt 0 ]; then
+		find_sendmailcf_count=`find / -name 'sendmail.cf' -type f 2>/dev/null | wc -l`
+		if [ $find_sendmailcf_count -gt 0 ]; then
+			sendmailcf_files=(`find / -name 'sendmail.cf' -type f 2>/dev/null`)
+			for ((i=0; i<${#sendmailcf_files[@]}; i++))
+			do
+				sendmailcf_banner_count=`grep -vE '^#|^\s#' ${sendmailcf_files[$i]} | grep 'Smtp' | grep 'GreetingMessage' | awk -F = '{gsub(" ", "", $0); print $2}' | wc -l`
+				if [ $sendmailcf_banner_count -eq 0 ]; then
+					echo "U-62 취약: smtp 서비스를 사용하고, ${sendmailcf_files[$i]} 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+                    ((vulc++))
+
+				fi
+			done
+		else
+			echo "U-62 취약: smtp 서비스를 사용하고, 로그온 메시지를 설정하는 파일이 없습니다." >> $result 2>&1
+            ((vulc++))
+		fi
+	fi
+    #Postfix 서비스 확인
+    if [ -f /etc/postfix/main.cf ]; then
+        postfix_banner_count=`grep -vE '^#|^\s#' /etc/postfix/main.cf | grep 'smtpd_banner' | awk -F = '$2!=" " {print $2}' | wc -l`
+        if [ $postfix_banner_count -eq 0 ]; then
+            echo "U-62 취약: postfix 서비스를 사용하고, /etc/postfix/main.cf 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+            ((vulc++))
+        fi
+    fi
+    #Exim 서비스 확인
+    if [ -f /etc/exim/exim.conf ]; then
+        exim_conf="/etc/exim/exim.conf"
+    elif [ -f /etc/exim4/exim4.conf ]; then
+        exim_conf="/etc/exim4/exim4.conf"
+    fi
+    if [ -f $exim_conf ]; then
+        exim_banner_count=`grep -vE '^#|^\s#' $exim_conf | grep 'banner' | awk -F = '$2!=" " {print $2}' | wc -l`
+        if [ $exim_banner_count -eq 0 ]; then
+            echo "U-62 취약: exim 서비스를 사용하고, $exim_conf 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+            ((vulc++))
+        fi
+    fi
+    #DNS 서비스 확인
+    if [ -f /etc/named.conf ]; then
+        named_conf="/etc/named.conf"
+    elif [ -f  /etc/bind/named.conf.options ]; then
+        named_conf=" /etc/bind/named.conf.options"
+    fi
+    if [ -f $named_conf ]; then
+        dns_banner_count=`grep -vE '^#|^\s#' $named_conf | grep 'version' | wc -l`
+        if [ $dns_banner_count -eq 0 ]; then
+            echo "U-62 취약: DNS 서비스를 사용하고, $named_conf 파일에 로그온 메시지를 설정하지 않았습니다." >> $result 2>&1
+            ((vulc++))
+        fi
+    fi
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+
+}
+
+
+U_63(){
+    perm=$(( $(stat -c "%a" /etc/sudoers) % 1000 ))
+    perm_owner=$((perm / 100))
+    perm_group=$((perm / 10 % 10))
+    perm_other=$((perm % 10))
+    owner=$(stat -c "%u" /etc/sudoers)
+    group=$(stat -c "%g" /etc/sudoers)
+    if [ "$owner" -ne 0 ] || [ "$group" -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 0 ] ; then
+        echo "U-63 취약: /etc/sudoers 소유자/그룹이 root가 아니거나 권한이 640 초과 (perm=$perm)" >> "$result"
+        ((Total_vulc++))
+    fi    
+}
+
+U_64(){
+    echo "U-64 검토: 주기적 보안 패치 및 벤더 권고사항 적용 여부 확인 필요" >> "$result"
+    ((Rev++))
+}
+
+U_65(){
+    if systemctl list-units --type=service | grep ntp; then
+        if [ -f /etc/ntp.conf ] && grep -Ev '^[[:space:]]*#' /etc/ntp.conf | grep -Eq '^(server|pool)'; then
+            echo "U-65 검토: NTP 서비스가 설치되어 있고, NTP 설정이 존재함" >> $result
+            ((Rev++))
+    else
+            echo "U-65 취약: NTP 서비스가 설치되어 있으나, NTP 설정이 존재하지 않음" >> $result
+            ((Total_vulc++))
+    fi
+}
+
+U_66(){
+    echo "U-66 검토: 정책에 따른 시스템 로깅 설정 확인 필요 /etc/rsyslog.conf" >> "$result"
+    ((Rev++))
+}
+
+
+U_67(){
+    vulc=0
+    mapfile -t logs < <(find /var/log -type f 2>/dev/null)
+
+    for log_file in "${logs[@]}"; do
+        if [ -f "$log_file" ]; then
+            perm=$(( $(stat -c "%a" "$log_file") % 1000 ))
+            perm_owner=$((perm / 100))
+            perm_group=$((perm / 10 % 10))
+            perm_other=$((perm % 10))
+            owner=$(stat -c "%u" "$log_file")
+            group=$(stat -c "%g" "$log_file")
+            if [ "$owner" -ne 0 ] || [ "$group" -ne 0 ] || [ "$perm_owner" -gt 6 ] || [ "$perm_group" -gt 4 ] || [ "$perm_other" -gt 4 ] ; then
+                echo "U-67 취약: $log_file 파일의 소유자가 root가 아니거나, 권한이 644를 넘음 (perm=$perm)" >> $result 
+                ((vulc++))
+            else
+                echo "점검완료"
+            fi   
+        fi
+    done
+
+    if [ $vulc -gt 0 ]; then
+        ((Total_vulc++))
+    fi
+
 }
